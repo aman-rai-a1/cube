@@ -244,7 +244,7 @@ export class CubeSymbols {
 
       get accessPolicy() {
         if (!accessPolicy) {
-          const parentAcls = cubeDefinition.extends ? super.accessPolicy : [];
+          const parentAcls = cubeDefinition.extends ? R.clone(super.accessPolicy) : [];
           accessPolicy = [...(parentAcls || []), ...(cubeDefinition.accessPolicy || [])];
         }
         // Schema validator expects accessPolicy to be not empty if defined
@@ -683,7 +683,7 @@ export class CubeSymbols {
       return cubeEvaluator.pathFromArray(fullPath(cubeEvaluator.joinHints(), [referencedCube, name]));
     }, {
       // eslint-disable-next-line no-shadow
-      sqlResolveFn: (symbol, currentCube, n) => cubeEvaluator.pathFromArray(fullPath(cubeEvaluator.joinHints(), [currentCube, n])),
+      sqlResolveFn: (symbol, currentCube, refProperty, propertyName) => cubeEvaluator.pathFromArray(fullPath(cubeEvaluator.joinHints(), [currentCube, refProperty, ...(propertyName ? [propertyName] : [])])),
       // eslint-disable-next-line no-shadow
       cubeAliasFn: (currentCube) => cubeEvaluator.pathFromArray(fullPath(cubeEvaluator.joinHints(), [currentCube])),
       collectJoinHints: options.collectJoinHints,
