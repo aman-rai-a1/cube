@@ -18,7 +18,7 @@ class ClickHouseFilter extends BaseFilter {
   public likeIgnoreCase(column, not, param, type) {
     const p = (!type || type === 'contains' || type === 'ends') ? '%' : '';
     const s = (!type || type === 'contains' || type === 'starts') ? '%' : '';
-    return `lower(${column}) ${not ? 'NOT' : ''} LIKE CONCAT('${p}', lower(${this.allocateParam(param)}), '${s}')`;
+    return `${column} ${not ? 'NOT' : ''} ILIKE CONCAT('${p}', ${this.allocateParam(param)}, '${s}')`;
   }
 
   public castParameter() {
@@ -272,6 +272,7 @@ export class ClickHouseQuery extends BaseQuery {
     // TODO: Introduce additional filter in jinja? or parseDateTimeBestEffort?
     // https://github.com/ClickHouse/ClickHouse/issues/19351
     templates.expressions.timestamp_literal = 'parseDateTimeBestEffort(\'{{ value }}\')';
+    delete templates.functions.PERCENTILECONT;
     delete templates.expressions.like_escape;
     templates.quotes.identifiers = '`';
     templates.quotes.escape = '\\`';
