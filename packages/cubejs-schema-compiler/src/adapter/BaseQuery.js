@@ -332,8 +332,9 @@ export class BaseQuery {
     this.useNativeSqlPlanner = this.options.useNativeSqlPlanner ?? getEnv('nativeSqlPlanner');
     this.canUseNativeSqlPlannerPreAggregation = false;
     if (this.useNativeSqlPlanner && !this.neverUseSqlPlannerPreaggregation()) {
-      const hasMultiStageMeasures = this.fullKeyQueryAggregateMeasures({ hasMultipliedForPreAggregation: true }).multiStageMembers.length > 0;
-      this.canUseNativeSqlPlannerPreAggregation = hasMultiStageMeasures;
+      const fullAggregateMeasures = this.fullKeyQueryAggregateMeasures({ hasMultipliedForPreAggregation: true });
+
+      this.canUseNativeSqlPlannerPreAggregation = fullAggregateMeasures.multiStageMembers.length > 0 || fullAggregateMeasures.cumulativeMeasures.length > 0;
     }
     this.queryLevelJoinHints = this.options.joinHints ?? [];
     this.prebuildJoin();
@@ -779,6 +780,13 @@ export class BaseQuery {
     );
   }
 
+  driverTools(external) {
+    if (external && !this.options.disableExternalPreAggregations && this.externalQueryClass) {
+      return this.externalQuery();
+    }
+    return this;
+  }
+
   buildSqlAndParamsRust(exportAnnotatedSql) {
     const order = this.options.order && R.pipe(
       R.map((hash) => ((!hash || !hash.id) ? null : hash)),
@@ -802,6 +810,7 @@ export class BaseQuery {
       exportAnnotatedSql: exportAnnotatedSql === true,
       preAggregationQuery: this.options.preAggregationQuery,
       totalQuery: this.options.totalQuery,
+      joinHints: this.options.joinHints,
     };
 
     const buildResult = nativeBuildSqlAndParams(queryParams);
@@ -1457,7 +1466,22 @@ export class BaseQuery {
     const memberDef = member.definition();
     // TODO can addGroupBy replaced by something else?
     if (memberDef.addGroupByReferences) {
-      queryContext = { ...queryContext, dimensions: R.uniq(queryContext.dimensions.concat(memberDef.addGroupByReferences)) };
+      const dims = memberDef.addGroupByReferences.reduce((acc, cur) => {
+        const pathArr = cur.split('.');
+        // addGroupBy may include time dimension with granularity
+        // But we don't need it as time dimension
+        if (pathArr.length > 2) {
+          pathArr.splice(2, 0, 'granularities');
+          acc.push(pathArr.join('.'));
+        } else {
+          acc.push(cur);
+        }
+        return acc;
+      }, []);
+      queryContext = {
+        ...queryContext,
+        dimensions: R.uniq(queryContext.dimensions.concat(dims)),
+      };
     }
     if (memberDef.timeShiftReferences?.length) {
       let { commonTimeShift } = queryContext;
@@ -2407,7 +2431,7 @@ export class BaseQuery {
    */
   collectCubeNames() {
     return this.collectFromMembers(
-      [],
+      false,
       this.collectCubeNamesFor.bind(this),
       'collectCubeNamesFor'
     );
@@ -3835,6 +3859,8 @@ export class BaseQuery {
         // DATEADD is being rewritten to DATE_ADD
         // DATEADD: 'DATEADD({{ date_part }}, {{ interval }}, {{ args[2] }})',
         DATE: 'DATE({{ args_concat }})',
+
+        PERCENTILECONT: 'PERCENTILE_CONT({{ args_concat }})',
       },
       statements: {
         select: '{% if ctes %} WITH \n' +
@@ -3897,6 +3923,7 @@ export class BaseQuery {
         like: '{{ expr }} {% if negated %}NOT {% endif %}LIKE {{ pattern }}',
         ilike: '{{ expr }} {% if negated %}NOT {% endif %}ILIKE {{ pattern }}',
         like_escape: '{{ like_expr }} ESCAPE {{ escape_char }}',
+        within_group: '{{ fun_sql }} WITHIN GROUP (ORDER BY {{ within_group_concat }})',
         concat_strings: '{{ strings | join(\' || \' ) }}',
       },
       tesseract: {
