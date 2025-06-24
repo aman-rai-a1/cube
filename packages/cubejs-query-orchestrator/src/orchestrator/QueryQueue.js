@@ -557,9 +557,6 @@ export class QueryQueue {
         }
       }));
 
-      /**
-       * TODO(ovr): Check LocalQueueDriver for strict guarantees that item cannot be in active & pending in the same time
-       */
       const [active, toProcess] = await queueConnection.getActiveAndToProcess();
 
       /**
